@@ -23,7 +23,9 @@ public interface IKernelPoolManager
     /// <returns>A dictionary mapping kernel keys to their remaining quotas.</returns>
     ValueTask<ConcurrentDictionary<string, (int Second, int Minute, int Day)>> GetRemainingQuotas(CancellationToken cancellationToken = default);
 
-    void Register(string key, IKernelPoolEntry entry);
+    ValueTask Register(string key, IKernelPoolEntry entry, CancellationToken cancellationToken = default);
+
+    ValueTask<bool> Unregister(string key, CancellationToken cancellationToken = default);
 
     bool TryGet(string key, out IKernelPoolEntry? entry);
 } 

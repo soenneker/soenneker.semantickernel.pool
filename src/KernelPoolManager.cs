@@ -2,7 +2,10 @@ using Microsoft.SemanticKernel;
 using Soenneker.Extensions.ValueTask;
 using Soenneker.SemanticKernel.Cache.Abstract;
 using Soenneker.SemanticKernel.Pool.Abstract;
+using Nito.AsyncEx;
 using System.Collections.Concurrent;
+using System.Collections.Generic;
+using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 
@@ -13,6 +16,7 @@ public sealed class KernelPoolManager : IKernelPoolManager
 {
     private readonly ConcurrentDictionary<string, IKernelPoolEntry> _entries = new();
     private readonly ConcurrentQueue<string> _orderedKeys = new();
+    private readonly AsyncLock _queueLock = new();
 
     private readonly ISemanticKernelCache _kernelCache;
 
@@ -43,25 +47,52 @@ public sealed class KernelPoolManager : IKernelPoolManager
         return null;
     }
 
-    public ValueTask<ConcurrentDictionary<string, (int Second, int Minute, int Day)>> GetRemainingQuotas(CancellationToken cancellationToken = default)
+    public async ValueTask<ConcurrentDictionary<string, (int Second, int Minute, int Day)>> GetRemainingQuotas(CancellationToken cancellationToken = default)
     {
         var result = new ConcurrentDictionary<string, (int Second, int Minute, int Day)>();
 
         foreach ((string key, IKernelPoolEntry entry) in _entries)
         {
-            (int Second, int Minute, int Day) quota = entry.RemainingQuota(cancellationToken).AwaitSync(); // sync safe in this context
+            (int Second, int Minute, int Day) quota = await entry.RemainingQuota(cancellationToken).NoSync();
             result.TryAdd(key, quota);
         }
 
-        return ValueTask.FromResult(result);
+        return result;
     }
 
-    public void Register(string key, IKernelPoolEntry entry)
+    public async ValueTask Register(string key, IKernelPoolEntry entry, CancellationToken cancellationToken = default)
     {
         if (_entries.TryAdd(key, entry))
         {
-            _orderedKeys.Enqueue(key);
+            using (await _queueLock.LockAsync(cancellationToken).ConfigureAwait(false))
+            {
+                _orderedKeys.Enqueue(key);
+            }
         }
+    }
+
+    public async ValueTask<bool> Unregister(string key, CancellationToken cancellationToken = default)
+    {
+        bool removed = _entries.TryRemove(key, out _);
+
+        if (removed)
+        {
+            using (await _queueLock.LockAsync(cancellationToken).ConfigureAwait(false))
+            {
+                IEnumerable<string> keys = _orderedKeys.ToArray().Where(k => k != key);
+
+                _orderedKeys.Clear();
+
+                foreach (string k in keys)
+                {
+                    _orderedKeys.Enqueue(k);
+                }
+            }
+
+            await _kernelCache.Remove(key);
+        }
+
+        return removed;
     }
 
     public bool TryGet(string key, out IKernelPoolEntry? entry)
