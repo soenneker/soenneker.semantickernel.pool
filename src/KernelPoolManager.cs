@@ -12,6 +12,8 @@ namespace Soenneker.SemanticKernel.Pool;
 public sealed class KernelPoolManager : IKernelPoolManager
 {
     private readonly ConcurrentDictionary<string, IKernelPoolEntry> _entries = new();
+    private readonly ConcurrentQueue<string> _orderedKeys = new();
+
     private readonly ISemanticKernelCache _kernelCache;
 
     public KernelPoolManager(ISemanticKernelCache kernelCache)
@@ -23,12 +25,15 @@ public sealed class KernelPoolManager : IKernelPoolManager
     {
         while (!cancellationToken.IsCancellationRequested)
         {
-            foreach ((string key, IKernelPoolEntry entry) in _entries)
+            foreach (string key in _orderedKeys)
             {
-                if (await entry.IsAvailable(cancellationToken))
+                if (_entries.TryGetValue(key, out IKernelPoolEntry? entry))
                 {
-                    Kernel kernel = await _kernelCache.Get(key, entry.Options, cancellationToken).NoSync();
-                    return (kernel, entry);
+                    if (await entry.IsAvailable(cancellationToken))
+                    {
+                        Kernel kernel = await _kernelCache.Get(key, entry.Options, cancellationToken).NoSync();
+                        return (kernel, entry);
+                    }
                 }
             }
 
@@ -53,7 +58,10 @@ public sealed class KernelPoolManager : IKernelPoolManager
 
     public void Register(string key, IKernelPoolEntry entry)
     {
-        _entries[key] = entry;
+        if (_entries.TryAdd(key, entry))
+        {
+            _orderedKeys.Enqueue(key);
+        }
     }
 
     public bool TryGet(string key, out IKernelPoolEntry? entry)
