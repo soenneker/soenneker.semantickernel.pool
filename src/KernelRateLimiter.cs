@@ -7,47 +7,48 @@ using Soenneker.SemanticKernel.Pool.Abstract;
 
 namespace Soenneker.SemanticKernel.Pool;
 
-/// <summary>
-/// Implements a sliding window rate limiter with support for requests per second, per minute, and per day.
-/// </summary>
+///<inheritdoc cref="IKernelRateLimiter"/>
 public sealed class KernelRateLimiter : IKernelRateLimiter
 {
-    private readonly ConcurrentQueue<DateTimeOffset> _secondWindow;
-    private readonly ConcurrentQueue<DateTimeOffset> _minuteWindow;
-    private readonly ConcurrentQueue<DateTimeOffset> _dayWindow;
-    private readonly int _requestsPerSecond;
-    private readonly int _requestsPerMinute;
-    private readonly int _requestsPerDay;
+    private readonly ConcurrentQueue<DateTimeOffset> _secondWindow = new();
+    private readonly ConcurrentQueue<DateTimeOffset> _minuteWindow = new();
+    private readonly ConcurrentQueue<DateTimeOffset> _dayWindow = new();
+
+    private readonly int? _requestsPerSecond;
+    private readonly int? _requestsPerMinute;
+    private readonly int? _requestsPerDay;
+
     private readonly AsyncLock _lock = new();
 
-    public KernelRateLimiter(int requestsPerSecond, int requestsPerMinute, int requestsPerDay)
+    public KernelRateLimiter(int? requestsPerSecond = null, int? requestsPerMinute = null, int? requestsPerDay = null)
     {
         _requestsPerSecond = requestsPerSecond;
         _requestsPerMinute = requestsPerMinute;
         _requestsPerDay = requestsPerDay;
-        _secondWindow = new ConcurrentQueue<DateTimeOffset>();
-        _minuteWindow = new ConcurrentQueue<DateTimeOffset>();
-        _dayWindow = new ConcurrentQueue<DateTimeOffset>();
     }
 
     public async ValueTask<bool> TryConsume(CancellationToken cancellationToken = default)
     {
+        if (_requestsPerSecond is null && _requestsPerMinute is null && _requestsPerDay is null)
+            return true;
+
         using (await _lock.LockAsync(cancellationToken).ConfigureAwait(false))
         {
             DateTimeOffset now = DateTimeOffset.UtcNow;
 
-            // Clean up expired entries
             CleanupWindow(_secondWindow, now.AddSeconds(-1));
             CleanupWindow(_minuteWindow, now.AddMinutes(-1));
             CleanupWindow(_dayWindow, now.AddDays(-1));
 
-            // Check if we're under the limits
-            if (_secondWindow.Count >= _requestsPerSecond || _minuteWindow.Count >= _requestsPerMinute || _dayWindow.Count >= _requestsPerDay)
-            {
+            if (_requestsPerSecond is int rps && _secondWindow.Count >= rps)
                 return false;
-            }
 
-            // Add new request
+            if (_requestsPerMinute is int rpm && _minuteWindow.Count >= rpm)
+                return false;
+
+            if (_requestsPerDay is int rpd && _dayWindow.Count >= rpd)
+                return false;
+
             _secondWindow.Enqueue(now);
             _minuteWindow.Enqueue(now);
             _dayWindow.Enqueue(now);
@@ -62,13 +63,28 @@ public sealed class KernelRateLimiter : IKernelRateLimiter
         {
             DateTimeOffset now = DateTimeOffset.UtcNow;
 
-            // Clean up expired entries
-            CleanupWindow(_secondWindow, now.AddSeconds(-1));
-            CleanupWindow(_minuteWindow, now.AddMinutes(-1));
-            CleanupWindow(_dayWindow, now.AddDays(-1));
+            var secondRemaining = int.MaxValue;
+            if (_requestsPerSecond is int rps)
+            {
+                CleanupWindow(_secondWindow, now.AddSeconds(-1));
+                secondRemaining = Math.Max(0, rps - _secondWindow.Count);
+            }
 
-            return (Second: Math.Max(0, _requestsPerSecond - _secondWindow.Count), Minute: Math.Max(0, _requestsPerMinute - _minuteWindow.Count),
-                Day: Math.Max(0, _requestsPerDay - _dayWindow.Count));
+            var minuteRemaining = int.MaxValue;
+            if (_requestsPerMinute is int rpm)
+            {
+                CleanupWindow(_minuteWindow, now.AddMinutes(-1));
+                minuteRemaining = Math.Max(0, rpm - _minuteWindow.Count);
+            }
+
+            var dayRemaining = int.MaxValue;
+            if (_requestsPerDay is int rpd)
+            {
+                CleanupWindow(_dayWindow, now.AddDays(-1));
+                dayRemaining = Math.Max(0, rpd - _dayWindow.Count);
+            }
+
+            return (secondRemaining, minuteRemaining, dayRemaining);
         }
     }
 
