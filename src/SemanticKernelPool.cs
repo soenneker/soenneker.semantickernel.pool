@@ -105,6 +105,18 @@ public sealed class SemanticKernelPool : ISemanticKernelPool
         return removed;
     }
 
+    public async ValueTask Clear(CancellationToken cancellationToken = default)
+    {
+        _entries.Clear();
+
+        using (await _queueLock.LockAsync(cancellationToken).ConfigureAwait(false))
+        {
+            while (_orderedKeys.TryDequeue(out _)) { }
+        }
+
+        await _kernelCache.Clear(cancellationToken).NoSync();
+    }
+
     public bool TryGet(string key, out IKernelPoolEntry? entry)
     {
         return _entries.TryGetValue(key, out entry);
