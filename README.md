@@ -33,10 +33,10 @@ services.AddSemanticKernelPoolAsSingleton()
 
 This library has several extension packages for different AI providers:
 
-- [Soenneker.SemanticKernel.Pool.Gemini](https://www.nuget.org/packages/Soenneker.SemanticKernel.Pool.Gemini/) - Google Gemini integration
-- [Soenneker.SemanticKernel.Pool.OpenAi](https://www.nuget.org/packages/Soenneker.SemanticKernel.Pool.OpenAi/) - OpenAI/OpenRouter.ai/etc integration
-- [Soenneker.SemanticKernel.Pool.Ollama](https://www.nuget.org/packages/Soenneker.SemanticKernel.Pool.Ollama/) - Ollama integration
-- [Soenneker.SemanticKernel.Pool.OpenAi.Azure](https://www.nuget.org/packages/Soenneker.SemanticKernel.Pool.OpenAi.Azure/) - Azure OpenAI integration
+- [Soenneker.SemanticKernel.Pool.Gemini](https://github.com/soenneker/Soenneker.SemanticKernel.Pool.Gemini/) - Google Gemini integration
+- [Soenneker.SemanticKernel.Pool.OpenAi](https://github.com/soenneker/Soenneker.SemanticKernel.Pool.OpenAi/) - OpenAI/OpenRouter.ai/etc integration
+- [Soenneker.SemanticKernel.Pool.Ollama](https://github.com/soenneker/Soenneker.SemanticKernel.Pool.Ollama/) - Ollama integration
+- [Soenneker.SemanticKernel.Pool.OpenAi.Azure](https://github.com/soenneker/Soenneker.SemanticKernel.Pool.OpenAi.Azure/) - Azure OpenAI integration
 
 ## Usage
 
