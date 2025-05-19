@@ -13,9 +13,18 @@ public static class SemanticKernelPoolRegistrar
     /// <summary>
     /// Registers the SemanticKernelPool as a singleton service.
     /// </summary>
-    public static IServiceCollection AddKernelPoolManagerAsSingleton(this IServiceCollection services)
+    public static IServiceCollection AddSemanticKernelPoolAsSingleton(this IServiceCollection services)
     {
         services.AddSemanticKernelCacheAsSingleton().TryAddSingleton<ISemanticKernelPool, SemanticKernelPool>();
+        return services;
+    }
+
+    /// <summary>
+    /// Registers the SemanticKernelPool as a scoped service.
+    /// </summary>
+    public static IServiceCollection AddSemanticKernelPoolAsScoped(this IServiceCollection services)
+    {
+        services.AddSemanticKernelCacheAsSingleton().TryAddScoped<ISemanticKernelPool, SemanticKernelPool>();
         return services;
     }
 }
