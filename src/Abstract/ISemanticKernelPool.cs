@@ -9,14 +9,14 @@ namespace Soenneker.SemanticKernel.Pool.Abstract;
 /// <summary>
 /// Manages a pool of Semantic Kernel instances with per-entry rate limiting.
 /// </summary>
-public interface IKernelPoolManager
+public interface ISemanticKernelPool
 {
     /// <summary>
     /// Gets the next available kernel based on rate limits.
     /// </summary>
     /// <param name="cancellationToken">A cancellation cancellationToken that can be used to cancel the operation.</param>
     /// <returns>A tuple containing the kernel and its entry if available, null otherwise.</returns>
-    ValueTask<(Kernel kernel, IKernelPoolEntry entry)?> GetAvailableKernel(CancellationToken cancellationToken = default);
+    ValueTask<(Kernel? kernel, IKernelPoolEntry? entry)> GetAvailableKernel(CancellationToken cancellationToken = default);
 
     /// <summary>
     /// Gets the remaining quota for all registered kernels.

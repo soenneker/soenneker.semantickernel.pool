@@ -1,32 +1,33 @@
-﻿using System.Collections.Concurrent;
-using System.Collections.Generic;
-using System.Threading;
-using System.Threading.Tasks;
-using Microsoft.SemanticKernel;
+﻿using Microsoft.SemanticKernel;
 using Nito.AsyncEx;
 using Soenneker.Extensions.Task;
 using Soenneker.Extensions.ValueTask;
 using Soenneker.SemanticKernel.Cache.Abstract;
 using Soenneker.SemanticKernel.Dtos.Options;
 using Soenneker.SemanticKernel.Pool.Abstract;
+using System;
+using System.Collections.Concurrent;
+using System.Collections.Generic;
+using System.Threading;
+using System.Threading.Tasks;
 
 namespace Soenneker.SemanticKernel.Pool;
 
-///<inheritdoc cref="IKernelPoolManager"/>
-public sealed class KernelPoolManager : IKernelPoolManager
+///<inheritdoc cref="ISemanticKernelPool"/>
+public sealed class SemanticKernelPool : ISemanticKernelPool
 {
     private readonly ConcurrentDictionary<string, IKernelPoolEntry> _entries = new();
     private readonly ConcurrentQueue<string> _orderedKeys = new();
     private readonly AsyncLock _queueLock = new();
 
     private readonly ISemanticKernelCache _kernelCache;
-    private readonly AsyncAutoResetEvent _availabilitySignal = new(false);
-    public KernelPoolManager(ISemanticKernelCache kernelCache)
+
+    public SemanticKernelPool(ISemanticKernelCache kernelCache)
     {
         _kernelCache = kernelCache;
     }
 
-    public async ValueTask<(Kernel kernel, IKernelPoolEntry entry)?> GetAvailableKernel(CancellationToken cancellationToken = default)
+    public async ValueTask<(Kernel? kernel, IKernelPoolEntry? entry)> GetAvailableKernel(CancellationToken cancellationToken = default)
     {
         while (!cancellationToken.IsCancellationRequested)
         {
@@ -45,11 +46,10 @@ public sealed class KernelPoolManager : IKernelPoolManager
                 }
             }
 
-            // ❌ Nothing available, wait until someone signals
-            await _availabilitySignal.WaitAsync(cancellationToken);
+            await Task.Delay(TimeSpan.FromSeconds(500), cancellationToken).NoSync();
         }
 
-        return null;
+        return (null, null);
     }
 
     public async ValueTask<ConcurrentDictionary<string, (int Second, int Minute, int Day)>> GetRemainingQuotas(CancellationToken cancellationToken = default)
@@ -65,10 +65,10 @@ public sealed class KernelPoolManager : IKernelPoolManager
         return result;
     }
 
-    public async ValueTask Register(string key, SemanticKernelOptions options, CancellationToken cancellationToken = default)
+    public ValueTask Register(string key, SemanticKernelOptions options, CancellationToken cancellationToken = default)
     {
         var entry = new KernelPoolEntry(key, options);
-        await Register(key, entry, cancellationToken).NoSync();
+        return Register(key, entry, cancellationToken);
     }
 
     public async ValueTask Register(string key, IKernelPoolEntry entry, CancellationToken cancellationToken = default)
@@ -79,8 +79,6 @@ public sealed class KernelPoolManager : IKernelPoolManager
             {
                 _orderedKeys.Enqueue(key);
             }
-
-            _availabilitySignal.Set();
         }
     }
 

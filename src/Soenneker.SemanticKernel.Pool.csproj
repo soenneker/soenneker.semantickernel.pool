@@ -44,8 +44,4 @@
     <ItemGroup>
         <PackageReference Include="Soenneker.SemanticKernel.Cache" Version="3.0.419" />
     </ItemGroup>
-
-    <ItemGroup>
-      <Folder Include="Abstract\" />
-    </ItemGroup>
 </Project>

@@ -7,11 +7,11 @@ namespace Soenneker.SemanticKernel.Pool.Tests;
 [Collection("Collection")]
 public class SemanticKernelPoolManagerTests : FixturedUnitTest
 {
-    private readonly IKernelPoolManager _manager;
+    private readonly ISemanticKernelPool _manager;
 
     public SemanticKernelPoolManagerTests(Fixture fixture, ITestOutputHelper output) : base(fixture, output)
     {
-        _manager = Resolve<IKernelPoolManager>(true);
+        _manager = Resolve<ISemanticKernelPool>(true);
     }
 
     [Fact]
