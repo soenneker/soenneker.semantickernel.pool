@@ -1,13 +1,14 @@
-using Microsoft.SemanticKernel;
-using Soenneker.Extensions.ValueTask;
-using Soenneker.SemanticKernel.Cache.Abstract;
-using Soenneker.SemanticKernel.Pool.Abstract;
-using Nito.AsyncEx;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
-using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
+using Microsoft.SemanticKernel;
+using Nito.AsyncEx;
+using Soenneker.Extensions.Task;
+using Soenneker.Extensions.ValueTask;
+using Soenneker.SemanticKernel.Cache.Abstract;
+using Soenneker.SemanticKernel.Dtos.Options;
+using Soenneker.SemanticKernel.Pool.Abstract;
 
 namespace Soenneker.SemanticKernel.Pool;
 
@@ -29,19 +30,22 @@ public sealed class KernelPoolManager : IKernelPoolManager
     {
         while (!cancellationToken.IsCancellationRequested)
         {
-            foreach (string key in _orderedKeys)
+            using (await _queueLock.LockAsync(cancellationToken).ConfigureAwait(false))
             {
-                if (_entries.TryGetValue(key, out IKernelPoolEntry? entry))
+                foreach (string key in _orderedKeys)
                 {
-                    if (await entry.IsAvailable(cancellationToken))
+                    if (_entries.TryGetValue(key, out IKernelPoolEntry? entry))
                     {
-                        Kernel kernel = await _kernelCache.Get(key, entry.Options, cancellationToken).NoSync();
-                        return (kernel, entry);
+                        if (await entry.IsAvailable(cancellationToken).NoSync())
+                        {
+                            Kernel kernel = await _kernelCache.Get(key, entry.Options, cancellationToken).NoSync();
+                            return (kernel, entry);
+                        }
                     }
                 }
             }
 
-            await Task.Delay(100, cancellationToken);
+            await Task.Delay(100, cancellationToken).NoSync();
         }
 
         return null;
@@ -49,15 +53,21 @@ public sealed class KernelPoolManager : IKernelPoolManager
 
     public async ValueTask<ConcurrentDictionary<string, (int Second, int Minute, int Day)>> GetRemainingQuotas(CancellationToken cancellationToken = default)
     {
-        var result = new ConcurrentDictionary<string, (int Second, int Minute, int Day)>();
+        var result = new ConcurrentDictionary<string, (int, int, int)>();
 
-        foreach ((string key, IKernelPoolEntry entry) in _entries)
+        foreach (KeyValuePair<string, IKernelPoolEntry> kvp in _entries)
         {
-            (int Second, int Minute, int Day) quota = await entry.RemainingQuota(cancellationToken).NoSync();
-            result.TryAdd(key, quota);
+            (int Second, int Minute, int Day) quota = await kvp.Value.RemainingQuota(cancellationToken).NoSync();
+            result.TryAdd(kvp.Key, quota);
         }
 
         return result;
+    }
+
+    public async ValueTask Register(string key, SemanticKernelOptions options, CancellationToken cancellationToken = default)
+    {
+        var entry = new KernelPoolEntry(key, options);
+        await Register(key, entry, cancellationToken).NoSync();
     }
 
     public async ValueTask Register(string key, IKernelPoolEntry entry, CancellationToken cancellationToken = default)
@@ -79,17 +89,16 @@ public sealed class KernelPoolManager : IKernelPoolManager
         {
             using (await _queueLock.LockAsync(cancellationToken).ConfigureAwait(false))
             {
-                IEnumerable<string> keys = _orderedKeys.ToArray().Where(k => k != key);
+                int count = _orderedKeys.Count;
 
-                _orderedKeys.Clear();
-
-                foreach (string k in keys)
+                for (var i = 0; i < count; i++)
                 {
-                    _orderedKeys.Enqueue(k);
+                    if (_orderedKeys.TryDequeue(out string? k) && k != key)
+                        _orderedKeys.Enqueue(k);
                 }
             }
 
-            await _kernelCache.Remove(key);
+            await _kernelCache.Remove(key, cancellationToken).NoSync();
         }
 
         return removed;

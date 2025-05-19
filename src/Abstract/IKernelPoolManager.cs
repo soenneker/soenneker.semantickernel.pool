@@ -1,4 +1,5 @@
 using Microsoft.SemanticKernel;
+using Soenneker.SemanticKernel.Dtos.Options;
 using System.Collections.Concurrent;
 using System.Threading;
 using System.Threading.Tasks;
@@ -22,6 +23,8 @@ public interface IKernelPoolManager
     /// </summary>
     /// <returns>A dictionary mapping kernel keys to their remaining quotas.</returns>
     ValueTask<ConcurrentDictionary<string, (int Second, int Minute, int Day)>> GetRemainingQuotas(CancellationToken cancellationToken = default);
+
+    ValueTask Register(string key, SemanticKernelOptions options, CancellationToken cancellationToken = default);
 
     ValueTask Register(string key, IKernelPoolEntry entry, CancellationToken cancellationToken = default);
 

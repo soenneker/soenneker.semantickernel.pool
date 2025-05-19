@@ -9,11 +9,11 @@ namespace Soenneker.SemanticKernel.Pool.Abstract;
 /// </summary>
 public interface IKernelPoolEntry
 {
-    public IKernelRateLimiter RateLimiter { get; set; }
+    public IKernelRateLimiter RateLimiter { get; }
 
-    public SemanticKernelOptions Options { get; set; }
+    public SemanticKernelOptions Options { get; }
 
-    public string Key { get; set; }
+    public string Key { get; }
 
     /// <summary>
     /// Gets whether this kernel is currently available based on rate limits.

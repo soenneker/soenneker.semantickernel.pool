@@ -8,11 +8,18 @@ namespace Soenneker.SemanticKernel.Pool;
 ///<inheritdoc cref="IKernelPoolEntry"/>
 public sealed class KernelPoolEntry : IKernelPoolEntry
 {
-    public IKernelRateLimiter RateLimiter { get; set; }
+    public IKernelRateLimiter RateLimiter { get; }
 
-    public SemanticKernelOptions Options { get; set; }
+    public SemanticKernelOptions Options { get; }
 
-    public string Key { get; set; }
+    public string Key { get; }
+
+    public KernelPoolEntry(string key, SemanticKernelOptions options)
+    {
+        Key = key;
+        Options = options;
+        RateLimiter = new KernelRateLimiter(options);
+    }
 
     public ValueTask<bool> IsAvailable(CancellationToken cancellationToken = default)
     {

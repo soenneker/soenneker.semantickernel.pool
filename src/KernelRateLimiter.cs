@@ -3,6 +3,7 @@ using System.Collections.Concurrent;
 using System.Threading;
 using System.Threading.Tasks;
 using Nito.AsyncEx;
+using Soenneker.SemanticKernel.Dtos.Options;
 using Soenneker.SemanticKernel.Pool.Abstract;
 
 namespace Soenneker.SemanticKernel.Pool;
@@ -13,32 +14,40 @@ public sealed class KernelRateLimiter : IKernelRateLimiter
     private readonly ConcurrentQueue<DateTimeOffset> _secondWindow = new();
     private readonly ConcurrentQueue<DateTimeOffset> _minuteWindow = new();
     private readonly ConcurrentQueue<DateTimeOffset> _dayWindow = new();
+    private readonly ConcurrentQueue<(DateTimeOffset Timestamp, int Tokens)> _tokenDayWindow = new();
 
     private readonly int? _requestsPerSecond;
     private readonly int? _requestsPerMinute;
     private readonly int? _requestsPerDay;
+    private readonly int? _tokensPerDay;
 
     private readonly AsyncLock _lock = new();
 
-    public KernelRateLimiter(int? requestsPerSecond = null, int? requestsPerMinute = null, int? requestsPerDay = null)
+    public KernelRateLimiter(SemanticKernelOptions options)
     {
-        _requestsPerSecond = requestsPerSecond;
-        _requestsPerMinute = requestsPerMinute;
-        _requestsPerDay = requestsPerDay;
+        _requestsPerSecond = options.RequestsPerSecond;
+        _requestsPerMinute = options.RequestsPerMinute;
+        _requestsPerDay = options.RequestsPerDay;
+        _tokensPerDay = options.TokensPerDay;
     }
 
-    public async ValueTask<bool> TryConsume(CancellationToken cancellationToken = default)
+    public ValueTask<bool> TryConsume(CancellationToken cancellationToken = default) => TryConsume(1, cancellationToken);
+
+    public async ValueTask<bool> TryConsume(int tokens, CancellationToken cancellationToken = default)
     {
-        if (_requestsPerSecond is null && _requestsPerMinute is null && _requestsPerDay is null)
+        if (_requestsPerSecond is null && _requestsPerMinute is null && _requestsPerDay is null && _tokensPerDay is null)
+        {
             return true;
+        }
 
         using (await _lock.LockAsync(cancellationToken).ConfigureAwait(false))
         {
             DateTimeOffset now = DateTimeOffset.UtcNow;
 
-            CleanupWindow(_secondWindow, now.AddSeconds(-1));
-            CleanupWindow(_minuteWindow, now.AddMinutes(-1));
-            CleanupWindow(_dayWindow, now.AddDays(-1));
+            CleanupWindow(_secondWindow, now.Ticks - TimeSpan.TicksPerSecond);
+            CleanupWindow(_minuteWindow, now.Ticks - TimeSpan.TicksPerMinute);
+            CleanupWindow(_dayWindow, now.Ticks - TimeSpan.TicksPerDay);
+            CleanupTokenWindow(_tokenDayWindow, now.Ticks - TimeSpan.TicksPerDay);
 
             if (_requestsPerSecond is int rps && _secondWindow.Count >= rps)
                 return false;
@@ -49,9 +58,17 @@ public sealed class KernelRateLimiter : IKernelRateLimiter
             if (_requestsPerDay is int rpd && _dayWindow.Count >= rpd)
                 return false;
 
-            _secondWindow.Enqueue(now);
-            _minuteWindow.Enqueue(now);
-            _dayWindow.Enqueue(now);
+            if (_tokensPerDay is int tpd && GetTokenSum() + tokens > tpd)
+                return false;
+
+            var ts = new DateTimeOffset(now.Ticks, TimeSpan.Zero); // reuse trimmed
+
+            _secondWindow.Enqueue(ts);
+            _minuteWindow.Enqueue(ts);
+            _dayWindow.Enqueue(ts);
+
+            if (_tokensPerDay is not null)
+                _tokenDayWindow.Enqueue((ts, tokens));
 
             return true;
         }
@@ -61,38 +78,54 @@ public sealed class KernelRateLimiter : IKernelRateLimiter
     {
         using (await _lock.LockAsync(cancellationToken).ConfigureAwait(false))
         {
-            DateTimeOffset now = DateTimeOffset.UtcNow;
+            long nowTicks = DateTimeOffset.UtcNow.Ticks;
 
-            var secondRemaining = int.MaxValue;
-            if (_requestsPerSecond is int rps)
-            {
-                CleanupWindow(_secondWindow, now.AddSeconds(-1));
-                secondRemaining = Math.Max(0, rps - _secondWindow.Count);
-            }
+            CleanupWindow(_secondWindow, nowTicks - TimeSpan.TicksPerSecond);
+            CleanupWindow(_minuteWindow, nowTicks - TimeSpan.TicksPerMinute);
+            CleanupWindow(_dayWindow, nowTicks - TimeSpan.TicksPerDay);
+            CleanupTokenWindow(_tokenDayWindow, nowTicks - TimeSpan.TicksPerDay);
 
-            var minuteRemaining = int.MaxValue;
-            if (_requestsPerMinute is int rpm)
-            {
-                CleanupWindow(_minuteWindow, now.AddMinutes(-1));
-                minuteRemaining = Math.Max(0, rpm - _minuteWindow.Count);
-            }
-
-            var dayRemaining = int.MaxValue;
-            if (_requestsPerDay is int rpd)
-            {
-                CleanupWindow(_dayWindow, now.AddDays(-1));
-                dayRemaining = Math.Max(0, rpd - _dayWindow.Count);
-            }
+            int secondRemaining = _requestsPerSecond.HasValue ? Math.Max(0, _requestsPerSecond.Value - _secondWindow.Count) : int.MaxValue;
+            int minuteRemaining = _requestsPerMinute.HasValue ? Math.Max(0, _requestsPerMinute.Value - _minuteWindow.Count) : int.MaxValue;
+            int dayRemaining = _requestsPerDay.HasValue ? Math.Max(0, _requestsPerDay.Value - _dayWindow.Count) : int.MaxValue;
 
             return (secondRemaining, minuteRemaining, dayRemaining);
         }
     }
 
-    private static void CleanupWindow(ConcurrentQueue<DateTimeOffset> window, DateTimeOffset cutoff)
+    public async ValueTask<int> GetRemainingTokens(CancellationToken cancellationToken = default)
     {
-        while (window.TryPeek(out DateTimeOffset oldest) && oldest < cutoff)
+        if (_tokensPerDay is null)
+            return int.MaxValue;
+
+        using (await _lock.LockAsync(cancellationToken).ConfigureAwait(false))
         {
-            window.TryDequeue(out _);
+            CleanupTokenWindow(_tokenDayWindow, DateTimeOffset.UtcNow.Ticks - TimeSpan.TicksPerDay);
+            return Math.Max(0, _tokensPerDay.Value - GetTokenSum());
         }
+    }
+
+    private static void CleanupWindow(ConcurrentQueue<DateTimeOffset> window, long cutoffTicks)
+    {
+        while (window.TryPeek(out DateTimeOffset ts) && ts.Ticks < cutoffTicks)
+            window.TryDequeue(out _);
+    }
+
+    private static void CleanupTokenWindow(ConcurrentQueue<(DateTimeOffset Timestamp, int Tokens)> window, long cutoffTicks)
+    {
+        while (window.TryPeek(out (DateTimeOffset Timestamp, int Tokens) item) && item.Timestamp.Ticks < cutoffTicks)
+            window.TryDequeue(out _);
+    }
+
+    private int GetTokenSum()
+    {
+        var total = 0;
+
+        foreach ((_, int tokens) in _tokenDayWindow)
+        {
+            total += tokens;
+        }
+
+        return total;
     }
 }
