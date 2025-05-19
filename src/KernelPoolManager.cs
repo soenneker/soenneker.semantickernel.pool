@@ -1,4 +1,4 @@
-using System.Collections.Concurrent;
+﻿using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Threading;
 using System.Threading.Tasks;
@@ -20,7 +20,7 @@ public sealed class KernelPoolManager : IKernelPoolManager
     private readonly AsyncLock _queueLock = new();
 
     private readonly ISemanticKernelCache _kernelCache;
-
+    private readonly AsyncAutoResetEvent _availabilitySignal = new(false);
     public KernelPoolManager(ISemanticKernelCache kernelCache)
     {
         _kernelCache = kernelCache;
@@ -45,7 +45,8 @@ public sealed class KernelPoolManager : IKernelPoolManager
                 }
             }
 
-            await Task.Delay(100, cancellationToken).NoSync();
+            // ❌ Nothing available, wait until someone signals
+            await _availabilitySignal.WaitAsync(cancellationToken);
         }
 
         return null;
@@ -78,6 +79,8 @@ public sealed class KernelPoolManager : IKernelPoolManager
             {
                 _orderedKeys.Enqueue(key);
             }
+
+            _availabilitySignal.Set();
         }
     }
 
