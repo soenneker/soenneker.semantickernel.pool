@@ -10,6 +10,7 @@ using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Threading;
 using System.Threading.Tasks;
+using Soenneker.SemanticKernel.Enums.KernelType;
 
 namespace Soenneker.SemanticKernel.Pool;
 
@@ -27,15 +28,18 @@ public sealed class SemanticKernelPool : ISemanticKernelPool
         _kernelCache = kernelCache;
     }
 
-    public async ValueTask<(Kernel? kernel, IKernelPoolEntry? entry)> GetAvailableKernel(CancellationToken cancellationToken = default)
+    public async ValueTask<(Kernel? kernel, IKernelPoolEntry? entry)> GetAvailableKernel(KernelType? type = null, CancellationToken cancellationToken = default)
     {
+        if (type == null)
+            type = KernelType.Chat;
+
         while (!cancellationToken.IsCancellationRequested)
         {
             using (await _queueLock.LockAsync(cancellationToken).ConfigureAwait(false))
             {
                 foreach (string key in _orderedKeys)
                 {
-                    if (_entries.TryGetValue(key, out IKernelPoolEntry? entry))
+                    if (_entries.TryGetValue(key, out IKernelPoolEntry? entry) && entry.Options.Type == type)
                     {
                         if (await entry.IsAvailable(cancellationToken).NoSync())
                         {
@@ -46,7 +50,7 @@ public sealed class SemanticKernelPool : ISemanticKernelPool
                 }
             }
 
-            await Task.Delay(TimeSpan.FromSeconds(500), cancellationToken).NoSync();
+            await Task.Delay(TimeSpan.FromSeconds(0.5), cancellationToken).NoSync();
         }
 
         return (null, null);
@@ -67,6 +71,9 @@ public sealed class SemanticKernelPool : ISemanticKernelPool
 
     public ValueTask Register(string key, SemanticKernelOptions options, CancellationToken cancellationToken = default)
     {
+        if (options.Type is null)
+            throw new ArgumentException("Type must be set on SemanticKernelOptions");
+
         var entry = new KernelPoolEntry(key, options);
         return Register(key, entry, cancellationToken);
     }

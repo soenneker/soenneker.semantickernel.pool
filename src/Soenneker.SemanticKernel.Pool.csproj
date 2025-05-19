@@ -35,13 +35,12 @@
     </PropertyGroup>
     
     <ItemGroup>
-        
         <None Include="..\README.md" Pack="true" PackagePath="\" />
         <None Include="..\LICENSE" Pack="true" PackagePath="\" />
         <None Include="..\icon.png" Pack="true" PackagePath="\" />
     </ItemGroup>
 
     <ItemGroup>
-        <PackageReference Include="Soenneker.SemanticKernel.Cache" Version="3.0.419" />
+        <PackageReference Include="Soenneker.SemanticKernel.Cache" Version="3.0.420" />
     </ItemGroup>
 </Project>

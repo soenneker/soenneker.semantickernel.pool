@@ -1,5 +1,6 @@
 using Microsoft.SemanticKernel;
 using Soenneker.SemanticKernel.Dtos.Options;
+using Soenneker.SemanticKernel.Enums.KernelType;
 using System.Collections.Concurrent;
 using System.Threading;
 using System.Threading.Tasks;
@@ -14,7 +15,9 @@ public interface ISemanticKernelPool
 {
     /// <summary>
     /// Retrieves the next available <see cref="Kernel"/> from the pool based on rate-limiting availability.
+    /// If no type is specified, defaults to <see cref="KernelType.Chat"/>.
     /// </summary>
+    /// <param name="type"></param>
     /// <param name="cancellationToken">A token to observe while waiting for an available kernel.</param>
     /// <returns>
     /// A tuple containing:
@@ -24,7 +27,7 @@ public interface ISemanticKernelPool
     /// </list>
     /// If no kernel is available before cancellation, both values will be null.
     /// </returns>
-    ValueTask<(Kernel? kernel, IKernelPoolEntry? entry)> GetAvailableKernel(CancellationToken cancellationToken = default);
+    ValueTask<(Kernel? kernel, IKernelPoolEntry? entry)> GetAvailableKernel(KernelType? type = null, CancellationToken cancellationToken = default);
 
     /// <summary>
     /// Retrieves the remaining rate-limited quota for all registered kernel entries in the pool.
