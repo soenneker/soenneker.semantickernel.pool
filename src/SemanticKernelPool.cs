@@ -1,5 +1,4 @@
 ﻿using Microsoft.SemanticKernel;
-using Nito.AsyncEx;
 using Soenneker.Extensions.Task;
 using Soenneker.Extensions.ValueTask;
 using Soenneker.SemanticKernel.Cache.Abstract;
@@ -11,16 +10,14 @@ using System.Collections.Generic;
 using System.Threading;
 using System.Threading.Tasks;
 using Soenneker.SemanticKernel.Enums.KernelType;
+using Soenneker.Utils.Delay;
 
 namespace Soenneker.SemanticKernel.Pool;
 
 ///<inheritdoc cref="ISemanticKernelPool"/>
 public sealed class SemanticKernelPool : ISemanticKernelPool
 {
-    private readonly ConcurrentDictionary<string, IKernelPoolEntry> _entries = new();
-    private readonly ConcurrentQueue<string> _orderedKeys = new();
-    private readonly AsyncLock _queueLock = new();
-
+    private readonly ConcurrentDictionary<string, SubPool> _subPools = new();
     private readonly ISemanticKernelCache _kernelCache;
 
     public SemanticKernelPool(ISemanticKernelCache kernelCache)
@@ -28,104 +25,146 @@ public sealed class SemanticKernelPool : ISemanticKernelPool
         _kernelCache = kernelCache;
     }
 
-    public async ValueTask<(Kernel? kernel, IKernelPoolEntry? entry)> GetAvailableKernel(KernelType? type = null, CancellationToken cancellationToken = default)
+    public async ValueTask<(Kernel? kernel, IKernelPoolEntry? entry)> GetAvailable(string poolId, KernelType? type = null,
+        CancellationToken cancellationToken = default)
     {
         if (type == null)
+        {
             type = KernelType.Chat;
+        }
+
+        SubPool pool = _subPools.GetOrAdd(poolId, _ => new SubPool());
 
         while (!cancellationToken.IsCancellationRequested)
         {
-            using (await _queueLock.LockAsync(cancellationToken).ConfigureAwait(false))
+            List<(string Key, IKernelPoolEntry Entry)> candidates;
+
+            using (await pool.QueueLock.LockAsync(cancellationToken).ConfigureAwait(false))
             {
-                foreach (string key in _orderedKeys)
+                candidates = new List<(string, IKernelPoolEntry)>(pool.Entries.Count);
+
+                foreach (string key in pool.OrderedKeys)
                 {
-                    if (_entries.TryGetValue(key, out IKernelPoolEntry? entry) && entry.Options.Type == type)
-                    {
-                        if (await entry.IsAvailable(cancellationToken).NoSync())
-                        {
-                            Kernel kernel = await _kernelCache.Get(key, entry.Options, cancellationToken).NoSync();
-                            return (kernel, entry);
-                        }
-                    }
+                    if (!pool.Entries.TryGetValue(key, out IKernelPoolEntry? entry))
+                        continue;
+
+                    if (entry.Options.Type != type)
+                        continue;
+
+                    candidates.Add((key, entry));
                 }
             }
 
-            await Task.Delay(TimeSpan.FromSeconds(0.5), cancellationToken).NoSync();
+            foreach ((string key, IKernelPoolEntry entry) in candidates)
+            {
+                if (!await entry.IsAvailable(cancellationToken).NoSync())
+                    continue;
+
+                if (!pool.Entries.TryGetValue(key, out IKernelPoolEntry? stillLive) || stillLive.Options.Type != type)
+                {
+                    continue;
+                }
+
+                Kernel kernel = await _kernelCache.Get(key, entry.Options, cancellationToken).NoSync();
+                return (kernel, entry);
+            }
+
+            await DelayUtil.Delay(TimeSpan.FromMilliseconds(500), null, cancellationToken).NoSync();
         }
 
         return (null, null);
     }
 
-    public async ValueTask<ConcurrentDictionary<string, (int Second, int Minute, int Day)>> GetRemainingQuotas(CancellationToken cancellationToken = default)
+    public async ValueTask<Dictionary<string, (int Second, int Minute, int Day)>> GetRemainingQuotas(string poolId,
+        CancellationToken cancellationToken = default)
     {
-        var result = new ConcurrentDictionary<string, (int, int, int)>();
+        var result = new Dictionary<string, (int, int, int)>();
 
-        foreach (KeyValuePair<string, IKernelPoolEntry> kvp in _entries)
+        if (!_subPools.TryGetValue(poolId, out SubPool? pool))
+            return result;
+
+        foreach (KeyValuePair<string, IKernelPoolEntry> kvp in pool.Entries)
         {
             (int Second, int Minute, int Day) quota = await kvp.Value.RemainingQuota(cancellationToken).NoSync();
-            result.TryAdd(kvp.Key, quota);
+            result[kvp.Key] = quota;
         }
 
         return result;
     }
 
-    public ValueTask Register(string key, SemanticKernelOptions options, CancellationToken cancellationToken = default)
+    public async ValueTask Add(string poolId, string entryKey, SemanticKernelOptions options, CancellationToken cancellationToken = default)
     {
-        if (options.Type is null)
-            throw new ArgumentException("Type must be set on SemanticKernelOptions");
+        if (options.Type == null)
+            throw new ArgumentException("Type must be set on SemanticKernelOptions", nameof(options));
 
-        var entry = new KernelPoolEntry(key, options);
-        return Register(key, entry, cancellationToken);
+        var entry = new KernelPoolEntry(entryKey, options);
+        await Add(poolId, entryKey, entry, cancellationToken);
     }
 
-    public async ValueTask Register(string key, IKernelPoolEntry entry, CancellationToken cancellationToken = default)
+    public async ValueTask Add(string poolId, string entryKey, IKernelPoolEntry entry, CancellationToken cancellationToken = default)
     {
-        if (_entries.TryAdd(key, entry))
+        SubPool pool = _subPools.GetOrAdd(poolId, _ => new SubPool());
+
+        if (pool.Entries.TryAdd(entryKey, entry))
         {
-            using (await _queueLock.LockAsync(cancellationToken).ConfigureAwait(false))
+            using (await pool.QueueLock.LockAsync(cancellationToken))
             {
-                _orderedKeys.Enqueue(key);
+                LinkedListNode<string> node = pool.OrderedKeys.AddLast(entryKey);
+                pool.NodeMap[entryKey] = node;
             }
         }
     }
 
-    public async ValueTask<bool> Unregister(string key, CancellationToken cancellationToken = default)
+    public async ValueTask<bool> Remove(string poolId, string entryKey, CancellationToken cancellationToken = default)
     {
-        bool removed = _entries.TryRemove(key, out _);
+        if (!_subPools.TryGetValue(poolId, out SubPool? pool))
+            return false;
 
-        if (removed)
+        if (!pool.Entries.TryRemove(entryKey, out _))
+            return false;
+
+        using (await pool.QueueLock.LockAsync(cancellationToken).ConfigureAwait(false))
         {
-            using (await _queueLock.LockAsync(cancellationToken).ConfigureAwait(false))
+            if (pool.NodeMap.TryGetValue(entryKey, out LinkedListNode<string>? node))
             {
-                int count = _orderedKeys.Count;
-
-                for (var i = 0; i < count; i++)
-                {
-                    if (_orderedKeys.TryDequeue(out string? k) && k != key)
-                        _orderedKeys.Enqueue(k);
-                }
+                pool.OrderedKeys.Remove(node);
+                pool.NodeMap.Remove(entryKey);
             }
-
-            await _kernelCache.Remove(key, cancellationToken).NoSync();
         }
 
-        return removed;
+        await _kernelCache.Remove(entryKey, cancellationToken).NoSync();
+        return true;
     }
 
-    public async ValueTask Clear(CancellationToken cancellationToken = default)
+    public async ValueTask Clear(string poolId, CancellationToken cancellationToken = default)
     {
-        _entries.Clear();
+        if (!_subPools.TryRemove(poolId, out SubPool? pool))
+            return;
 
-        using (await _queueLock.LockAsync(cancellationToken).ConfigureAwait(false))
+        pool.Entries.Clear();
+
+        using (await pool.QueueLock.LockAsync(cancellationToken).ConfigureAwait(false))
         {
-            while (_orderedKeys.TryDequeue(out _)) { }
+            pool.OrderedKeys = [];
+            pool.NodeMap.Clear();
         }
 
         await _kernelCache.Clear(cancellationToken).NoSync();
     }
 
-    public bool TryGet(string key, out IKernelPoolEntry? entry)
+    public async ValueTask ClearAll(CancellationToken cancellationToken = default)
     {
-        return _entries.TryGetValue(key, out entry);
+        _subPools.Clear();
+        await _kernelCache.Clear(cancellationToken).NoSync();
+    }
+
+    public bool TryGet(string poolId, string entryKey, out IKernelPoolEntry? entry)
+    {
+        entry = null;
+        
+        if (!_subPools.TryGetValue(poolId, out SubPool? pool))
+            return false;
+
+        return pool.Entries.TryGetValue(entryKey, out entry);
     }
 }
