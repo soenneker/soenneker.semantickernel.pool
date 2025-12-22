@@ -2,7 +2,8 @@ using System;
 using System.Collections.Concurrent;
 using System.Threading;
 using System.Threading.Tasks;
-using Nito.AsyncEx;
+using Soenneker.Asyncs.Locks;
+using Soenneker.Extensions.ValueTask;
 using Soenneker.SemanticKernel.Dtos.Options;
 using Soenneker.SemanticKernel.Pool.Abstract;
 
@@ -40,7 +41,7 @@ public sealed class KernelRateLimiter : IKernelRateLimiter
             return true;
         }
 
-        using (await _lock.LockAsync(cancellationToken).ConfigureAwait(false))
+        using (await _lock.Lock(cancellationToken).NoSync())
         {
             DateTimeOffset now = DateTimeOffset.UtcNow;
 
@@ -76,7 +77,7 @@ public sealed class KernelRateLimiter : IKernelRateLimiter
 
     public async ValueTask<(int Second, int Minute, int Day)> GetRemaining(CancellationToken cancellationToken = default)
     {
-        using (await _lock.LockAsync(cancellationToken).ConfigureAwait(false))
+        using (await _lock.Lock(cancellationToken).NoSync())
         {
             long nowTicks = DateTimeOffset.UtcNow.Ticks;
 
@@ -98,7 +99,7 @@ public sealed class KernelRateLimiter : IKernelRateLimiter
         if (_tokensPerDay is null)
             return int.MaxValue;
 
-        using (await _lock.LockAsync(cancellationToken).ConfigureAwait(false))
+        using (await _lock.Lock(cancellationToken).NoSync())
         {
             CleanupTokenWindow(_tokenDayWindow, DateTimeOffset.UtcNow.Ticks - TimeSpan.TicksPerDay);
             return Math.Max(0, _tokensPerDay.Value - GetTokenSum());

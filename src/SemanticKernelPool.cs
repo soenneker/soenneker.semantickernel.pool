@@ -39,7 +39,7 @@ public sealed class SemanticKernelPool : ISemanticKernelPool
         {
             List<(string Key, IKernelPoolEntry Entry)> candidates;
 
-            using (await pool.QueueLock.LockAsync(cancellationToken).ConfigureAwait(false))
+            using (await pool.QueueLock.Lock(cancellationToken).NoSync())
             {
                 candidates = new List<(string, IKernelPoolEntry)>(pool.Entries.Count);
 
@@ -107,7 +107,7 @@ public sealed class SemanticKernelPool : ISemanticKernelPool
 
         if (pool.Entries.TryAdd(entryKey, entry))
         {
-            using (await pool.QueueLock.LockAsync(cancellationToken))
+            using (await pool.QueueLock.Lock(cancellationToken).NoSync())
             {
                 LinkedListNode<string> node = pool.OrderedKeys.AddLast(entryKey);
                 pool.NodeMap[entryKey] = node;
@@ -123,7 +123,7 @@ public sealed class SemanticKernelPool : ISemanticKernelPool
         if (!pool.Entries.TryRemove(entryKey, out _))
             return false;
 
-        using (await pool.QueueLock.LockAsync(cancellationToken).ConfigureAwait(false))
+        using (await pool.QueueLock.Lock(cancellationToken).NoSync())
         {
             if (pool.NodeMap.TryGetValue(entryKey, out LinkedListNode<string>? node))
             {
@@ -143,7 +143,7 @@ public sealed class SemanticKernelPool : ISemanticKernelPool
 
         pool.Entries.Clear();
 
-        using (await pool.QueueLock.LockAsync(cancellationToken).ConfigureAwait(false))
+        using (await pool.QueueLock.Lock(cancellationToken).NoSync())
         {
             pool.OrderedKeys = [];
             pool.NodeMap.Clear();
