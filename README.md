@@ -1,6 +1,7 @@
-Ôªø[![](https://img.shields.io/nuget/v/soenneker.semantickernel.pool.svg?style=for-the-badge)](https://www.nuget.org/packages/soenneker.semantickernel.pool/)  
+[![](https://img.shields.io/nuget/v/soenneker.semantickernel.pool.svg?style=for-the-badge)](https://www.nuget.org/packages/soenneker.semantickernel.pool/)  
 [![](https://img.shields.io/github/actions/workflow/status/soenneker/soenneker.semantickernel.pool/publish-package.yml?style=for-the-badge)](https://github.com/soenneker/soenneker.semantickernel.pool/actions/workflows/publish-package.yml)  
 [![](https://img.shields.io/nuget/dt/soenneker.semantickernel.pool.svg?style=for-the-badge)](https://www.nuget.org/packages/soenneker.semantickernel.pool/)
+[![](https://img.shields.io/github/actions/workflow/status/soenneker/soenneker.semantickernel.pool/codeql.yml?label=CodeQL&style=for-the-badge)](https://github.com/soenneker/soenneker.semantickernel.pool/actions/workflows/codeql.yml)
 
 # ![](https://user-images.githubusercontent.com/4441470/224455560-91ed3ee7-f510-4041-a8d2-3fc093025112.png) Soenneker.SemanticKernel.Pool
 
@@ -32,10 +33,10 @@ services.AddSemanticKernelPoolAsSingleton();
 
 This library has several extension packages for different AI providers:
 
-* [Soenneker.SemanticKernel.Pool.Gemini](https://github.com/soenneker/Soenneker.SemanticKernel.Pool.Gemini/) ‚Äì Google Gemini integration
-* [Soenneker.SemanticKernel.Pool.OpenAi](https://github.com/soenneker/Soenneker.SemanticKernel.Pool.OpenAi/) ‚Äì OpenAI/OpenRouter.ai/etc. integration
-* [Soenneker.SemanticKernel.Pool.Ollama](https://github.com/soenneker/Soenneker.SemanticKernel.Pool.Ollama/) ‚Äì Ollama integration
-* [Soenneker.SemanticKernel.Pool.OpenAi.Azure](https://github.com/soenneker/Soenneker.SemanticKernel.Pool.OpenAi.Azure/) ‚Äì Azure OpenAI integration
+* [Soenneker.SemanticKernel.Pool.Gemini](https://github.com/soenneker/Soenneker.SemanticKernel.Pool.Gemini/) ñ Google Gemini integration
+* [Soenneker.SemanticKernel.Pool.OpenAi](https://github.com/soenneker/Soenneker.SemanticKernel.Pool.OpenAi/) ñ OpenAI/OpenRouter.ai/etc. integration
+* [Soenneker.SemanticKernel.Pool.Ollama](https://github.com/soenneker/Soenneker.SemanticKernel.Pool.Ollama/) ñ Ollama integration
+* [Soenneker.SemanticKernel.Pool.OpenAi.Azure](https://github.com/soenneker/Soenneker.SemanticKernel.Pool.OpenAi.Azure/) ñ Azure OpenAI integration
 
 ## Usage
 
@@ -94,7 +95,7 @@ public class Program
 
 ### Working with Sub-Pools
 
-Each call to `Register(...)` creates a new ‚Äúentry‚Äù under the specified `poolId`. Entries are checked out in the order they were added (round-robin), subject to rate limits. You can have multiple sub-pools by choosing different `poolId` strings:
+Each call to `Register(...)` creates a new ìentryî under the specified `poolId`. Entries are checked out in the order they were added (round-robin), subject to rate limits. You can have multiple sub-pools by choosing different `poolId` strings:
 
 ```csharp
 // Register two separate sub-pools
@@ -137,7 +138,7 @@ public class MyService
 
         // Check rate limit usage
         var remaining = await entry.RemainingQuota();
-        Console.WriteLine($"Remaining quotas ‚Äî Second: {remaining.Second}, Minute: {remaining.Minute}, Day: {remaining.Day}");
+        Console.WriteLine($"Remaining quotas ó Second: {remaining.Second}, Minute: {remaining.Minute}, Day: {remaining.Day}");
     }
 }
 ```
