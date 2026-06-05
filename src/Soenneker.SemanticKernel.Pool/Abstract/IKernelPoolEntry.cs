@@ -9,10 +9,19 @@ namespace Soenneker.SemanticKernel.Pool.Abstract;
 /// </summary>
 public interface IKernelPoolEntry
 {
+    /// <summary>
+    /// Gets rate limiter.
+    /// </summary>
     public IKernelRateLimiter RateLimiter { get; }
 
+    /// <summary>
+    /// Gets options.
+    /// </summary>
     public SemanticKernelOptions Options { get; }
 
+    /// <summary>
+    /// Gets key.
+    /// </summary>
     public string Key { get; }
 
     /// <summary>
