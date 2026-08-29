@@ -9,7 +9,7 @@ using Soenneker.SemanticKernel.Pool.Abstract;
 
 namespace Soenneker.SemanticKernel.Pool;
 
-///<inheritdoc cref="IKernelRateLimiter"/>
+/// <inheritdoc cref="IKernelRateLimiter"/>
 public sealed class KernelRateLimiter : IKernelRateLimiter
 {
     private readonly ConcurrentQueue<DateTimeOffset> _secondWindow = new();

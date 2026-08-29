@@ -14,7 +14,7 @@ using Soenneker.Utils.Delay;
 
 namespace Soenneker.SemanticKernel.Pool;
 
-///<inheritdoc cref="ISemanticKernelPool"/>
+/// <inheritdoc cref="ISemanticKernelPool"/>
 public sealed class SemanticKernelPool : ISemanticKernelPool
 {
     private readonly ConcurrentDictionary<string, SubPool> _subPools = new();

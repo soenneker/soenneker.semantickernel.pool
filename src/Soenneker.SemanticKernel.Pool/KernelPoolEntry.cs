@@ -5,7 +5,7 @@ using System.Threading.Tasks;
 
 namespace Soenneker.SemanticKernel.Pool;
 
-///<inheritdoc cref="IKernelPoolEntry"/>
+/// <inheritdoc cref="IKernelPoolEntry"/>
 public sealed class KernelPoolEntry : IKernelPoolEntry
 {
     public IKernelRateLimiter RateLimiter { get; }
