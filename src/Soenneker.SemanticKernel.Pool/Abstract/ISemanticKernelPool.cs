@@ -48,10 +48,9 @@ public interface ISemanticKernelPool
     /// </summary>
     /// <param name="poolId">Identifier for the sub-pool.</param>
     /// <param name="entryKey">Unique key for this kernel entry.</param>
-    /// <param name="options">
-    /// <see cref="SemanticKernelOptions"/> must have <see cref="SemanticKernelOptions.Type"/> set.
-    /// </param>
+    /// <param name="options"><see cref="SemanticKernelOptions"/> must have <see cref="SemanticKernelOptions.Type"/> set.</param>
     /// <param name="cancellationToken">Token to cancel the operation.</param>
+    /// <returns>A task that completes when the add operation is complete.</returns>
     ValueTask Add(string poolId, string entryKey, SemanticKernelOptions options, CancellationToken cancellationToken = default);
 
     /// <summary>
@@ -61,6 +60,7 @@ public interface ISemanticKernelPool
     /// <param name="entryKey">Unique key for this kernel entry.</param>
     /// <param name="entry">Pre-constructed <see cref="IKernelPoolEntry"/>.</param>
     /// <param name="cancellationToken">Token to cancel the operation.</param>
+    /// <returns>A task that completes when the add operation is complete.</returns>
     ValueTask Add(string poolId, string entryKey, IKernelPoolEntry entry, CancellationToken cancellationToken = default);
 
     /// <summary>
@@ -81,12 +81,14 @@ public interface ISemanticKernelPool
     /// </summary>
     /// <param name="poolId">Identifier for the sub-pool.</param>
     /// <param name="cancellationToken">Token to cancel the operation.</param>
+    /// <returns>A task that completes when the Semantic Kernel Pool has been cleared.</returns>
     ValueTask Clear(string poolId, CancellationToken cancellationToken = default);
 
     /// <summary>
     /// Clears and removes every sub-pool (all poolIds) and clears the internal cache completely.
     /// </summary>
     /// <param name="cancellationToken">Token to cancel the operation.</param>
+    /// <returns>A task that completes when the Semantic Kernel Pool has been cleared.</returns>
     ValueTask ClearAll(CancellationToken cancellationToken = default);
 
     /// <summary>

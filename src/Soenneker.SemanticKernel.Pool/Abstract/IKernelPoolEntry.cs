@@ -27,10 +27,14 @@ public interface IKernelPoolEntry
     /// <summary>
     /// Gets whether this kernel is currently available based on rate limits.
     /// </summary>
+    /// <param name="cancellationToken">Token used to cancel the operation.</param>
+    /// <returns>true if gets whether this kernel is currently available based on rate limits; otherwise, false.</returns>
     ValueTask<bool> IsAvailable(CancellationToken cancellationToken = default);
 
     /// <summary>
     /// Gets the remaining quota for this kernel entry.
     /// </summary>
+    /// <param name="cancellationToken">Token used to cancel the operation.</param>
+    /// <returns>A task whose result is the requested (int Second, int Minute, int Day).</returns>
     ValueTask<(int Second, int Minute, int Day)> RemainingQuota(CancellationToken cancellationToken = default);
-} 
+}

@@ -35,11 +35,11 @@ public sealed class KernelRateLimiter : IKernelRateLimiter
     public ValueTask<bool> TryConsume(CancellationToken cancellationToken = default) => TryConsume(1, cancellationToken);
 
     /// <summary>
-    /// Attempts to execute consume.
+    /// Attempts to consume.
     /// </summary>
-    /// <param name="tokens">The tokens.</param>
-    /// <param name="cancellationToken">The cancellation token.</param>
-    /// <returns>A task containing the result of the operation.</returns>
+    /// <param name="tokens">Tokens for the try consume operation.</param>
+    /// <param name="cancellationToken">Token used to cancel the operation.</param>
+    /// <returns>true if the requested update was applied; otherwise, false.</returns>
     public async ValueTask<bool> TryConsume(int tokens, CancellationToken cancellationToken = default)
     {
         if (_requestsPerSecond is null && _requestsPerMinute is null && _requestsPerDay is null && _tokensPerDay is null)
@@ -103,8 +103,8 @@ public sealed class KernelRateLimiter : IKernelRateLimiter
     /// <summary>
     /// Gets remaining tokens.
     /// </summary>
-    /// <param name="cancellationToken">The cancellation token.</param>
-    /// <returns>A task containing the result of the operation.</returns>
+    /// <param name="cancellationToken">Token used to cancel the operation.</param>
+    /// <returns>A task whose result is the requested value.</returns>
     public async ValueTask<int> GetRemainingTokens(CancellationToken cancellationToken = default)
     {
         if (_tokensPerDay is null)
