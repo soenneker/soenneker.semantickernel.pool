@@ -1,164 +1,93 @@
-[![](https://img.shields.io/nuget/v/soenneker.semantickernel.pool.svg?style=for-the-badge)](https://www.nuget.org/packages/soenneker.semantickernel.pool/)  
-[![](https://img.shields.io/github/actions/workflow/status/soenneker/soenneker.semantickernel.pool/publish-package.yml?style=for-the-badge)](https://github.com/soenneker/soenneker.semantickernel.pool/actions/workflows/publish-package.yml)  
+[![](https://img.shields.io/nuget/v/soenneker.semantickernel.pool.svg?style=for-the-badge)](https://www.nuget.org/packages/soenneker.semantickernel.pool/)
+[![](https://img.shields.io/github/actions/workflow/status/soenneker/soenneker.semantickernel.pool/publish-package.yml?style=for-the-badge)](https://github.com/soenneker/soenneker.semantickernel.pool/actions/workflows/publish-package.yml)
 [![](https://img.shields.io/nuget/dt/soenneker.semantickernel.pool.svg?style=for-the-badge)](https://www.nuget.org/packages/soenneker.semantickernel.pool/)
 [![](https://img.shields.io/github/actions/workflow/status/soenneker/soenneker.semantickernel.pool/codeql.yml?label=CodeQL&style=for-the-badge)](https://github.com/soenneker/soenneker.semantickernel.pool/actions/workflows/codeql.yml)
 
-# ![](https://user-images.githubusercontent.com/4441470/224455560-91ed3ee7-f510-4041-a8d2-3fc093025112.png) Soenneker.SemanticKernel.Pool
+# Soenneker.SemanticKernel.Pool
 
-A high-performance, thread-safe pool implementation for Microsoft Semantic Kernel instances with built-in rate limiting capabilities.
-
-## Features
-
-- **Kernel Pooling**: Efficiently manages and reuses Semantic Kernel instances  
-- **Rate Limiting**: Built-in support for request rate limiting at multiple time windows:  
-  - Per-second rate limiting  
-  - Per-minute rate limiting  
-  - Per-day rate limiting  
-  - Token-based rate limiting  
-- **Thread Safety**: Fully thread-safe implementation using concurrent collections and async locking  
-- **Flexible Configuration**: Configurable rate limits and pool settings  
-- **Resource Management**: Automatic cleanup of expired rate limit windows  
+A keyed collection of Semantic Kernel configurations with per-entry request quotas and cached kernel construction.
 
 ## Installation
 
 ```bash
 dotnet add package Soenneker.SemanticKernel.Pool
-````
+```
+
+## Registration
 
 ```csharp
+using Soenneker.SemanticKernel.Pool.Registrars;
+
 services.AddSemanticKernelPoolAsSingleton();
 ```
 
-## Extension Packages
+`AddSemanticKernelPoolAsScoped()` is also available. Both registrations use the singleton Semantic Kernel cache, so cached kernels can survive disposal of a scoped pool.
 
-This library has several extension packages for different AI providers:
+## Add an entry
 
-* [Soenneker.SemanticKernel.Pool.Gemini](https://github.com/soenneker/Soenneker.SemanticKernel.Pool.Gemini/) – Google Gemini integration
-* [Soenneker.SemanticKernel.Pool.OpenAi](https://github.com/soenneker/Soenneker.SemanticKernel.Pool.OpenAi/) – OpenAI/OpenRouter.ai/etc. integration
-* [Soenneker.SemanticKernel.Pool.Ollama](https://github.com/soenneker/Soenneker.SemanticKernel.Pool.Ollama/) – Ollama integration
-* [Soenneker.SemanticKernel.Pool.OpenAi.Azure](https://github.com/soenneker/Soenneker.SemanticKernel.Pool.OpenAi.Azure/) – Azure OpenAI integration
-
-## Usage
-
-### Startup Configuration
+Each entry belongs to a named sub-pool and must specify its `KernelType`:
 
 ```csharp
-// Program.cs or Startup.cs
-public class Program
+using Microsoft.SemanticKernel;
+using Soenneker.SemanticKernel.Dtos.Options;
+using Soenneker.SemanticKernel.Enums.KernelType;
+using Soenneker.SemanticKernel.Pool.Abstract;
+
+var options = new SemanticKernelOptions
 {
-    public static async Task Main(string[] args)
+    Type = KernelType.Chat,
+    ModelId = "primary-chat-model",
+    RequestsPerSecond = 2,
+    RequestsPerMinute = 60,
+    RequestsPerDay = 1_000,
+    KernelFactory = static (options, cancellationToken) =>
     {
-        var builder = WebApplication.CreateBuilder(args);
+        IKernelBuilder builder = Kernel.CreateBuilder();
 
-        // Add the kernel pool as a singleton
-        builder.Services.AddSemanticKernelPoolAsSingleton();
+        // Add the connector for options.ModelId, Endpoint, and ApiKey.
 
-        var app = builder.Build();
-
-        // Get the pool service
-        var kernelPool = app.Services.GetRequiredService<ISemanticKernelPool>();
-
-        // Create SemanticKernelOptions (example uses OpenAI)
-        var options = new SemanticKernelOptions
-        {
-            ApiKey = "your-api-key",
-            Endpoint = "https://api.openai.com/v1",
-            Model = "gpt-4",
-            KernelFactory = async (opts, _) =>
-            {
-                return Kernel.CreateBuilder()
-                             .AddOpenAIChatCompletion(
-                                 modelId: opts.ModelId!,
-                                 new OpenAIClient(
-                                     new ApiKeyCredential(opts.ApiKey),
-                                     new OpenAIClientOptions { Endpoint = new Uri(opts.Endpoint) }));
-            },
-
-            // Rate Limiting
-            RequestsPerSecond = 10,
-            RequestsPerMinute = 100,
-            RequestsPerDay = 1000,
-            TokensPerDay = 10000
-        };
-
-        // Register one or more entries under a "sub-pool-1" sub-pool
-        // poolId: "sub-pool-1", entryKey: "entry1"
-        await kernelPool.Register("sub-pool-1", "entry1", options);
-
-        // You can register additional entries (with different entryKey or options)
-        // await kernelPool.Register("sub-pool-1", "entry2", otherOptions);
-
-        await app.RunAsync();
+        return ValueTask.FromResult(builder);
     }
-}
+};
+
+await pool.Add("chat", "primary", options, cancellationToken);
 ```
 
-### Working with Sub-Pools
+Provider-specific pool packages can create these options and connector registrations for OpenAI, Azure OpenAI, Gemini, Mistral, and Ollama.
 
-Each call to `Register(...)` creates a new “entry” under the specified `poolId`. Entries are checked out in the order they were added (round-robin), subject to rate limits. You can have multiple sub-pools by choosing different `poolId` strings:
+## Acquire a kernel
 
 ```csharp
-// Register two separate sub-pools
-await kernelPool.Register("reasoning", "o4-mini-high", reasoningOptions);
-await kernelPool.Register("high-performance", "4o", highPerformanceOptions);
+(Kernel? kernel, IKernelPoolEntry? entry) =
+    await pool.GetAvailable("chat", KernelType.Chat, cancellationToken);
+
+if (kernel is null || entry is null)
+    return;
+
+// Resolve and use the services configured by the entry's KernelFactory.
 ```
 
-### Retrieving an Available Kernel
+The pool checks matching entries in insertion order and returns the first entry whose quota can be consumed. It is not round-robin. If none is available, `GetAvailable` waits 500 ms and tries again until an entry becomes available or cancellation stops the operation.
+
+Acquisition counts as one request against every configured request window. `TokensPerDay` also counts one unit per acquisition through this API; the pool does not inspect the provider response or actual model-token usage.
+
+Inspect the remaining request quotas when needed:
 
 ```csharp
-public class MyService
-{
-    private readonly ISemanticKernelPool _kernelPool;
-
-    public MyService(ISemanticKernelPool kernelPool)
-    {
-        _kernelPool = kernelPool;
-    }
-
-    public async Task ProcessAsync()
-    {
-        // Attempt to get an available kernel from the "my-kernel" sub-pool
-        // If no type is provided, defaults to KernelType.Chat
-        var (kernel, entry) = await _kernelPool.GetAvailableKernel("my-kernel");
-
-        if (kernel is null || entry is null)
-        {
-            Console.WriteLine("No available kernel or operation was cancelled.");
-            return;
-        }
-
-        // Use the kernel as usual
-        var chatCompletion = kernel.GetService<IChatCompletionService>();
-
-        var chatHistory = new ChatHistory();
-        chatHistory.AddMessage(AuthorRole.User, "What's the capital of France?");
-
-        var response = await chatCompletion.GetChatMessageContentAsync(chatHistory);
-        Console.WriteLine($"Response: {response.Content}");
-
-        // Check rate limit usage
-        var remaining = await entry.RemainingQuota();
-        Console.WriteLine($"Remaining quotas — Second: {remaining.Second}, Minute: {remaining.Minute}, Day: {remaining.Day}");
-    }
-}
+Dictionary<string, (int Second, int Minute, int Day)> quotas =
+    await pool.GetRemainingQuotas("chat", cancellationToken);
 ```
 
-### Unregistering and Clearing
+An unconfigured quota is reported as `int.MaxValue`.
 
-* **Remove a single entry from a sub-pool**
+## Remove entries
 
-  ```csharp
-  bool removed = await kernelPool.Remove("sub-pool-1", "entry1");
-  ```
+```csharp
+bool removed = await pool.Remove("chat", "primary", cancellationToken);
+await pool.Clear("chat", cancellationToken);
+await pool.ClearAll(cancellationToken);
+```
 
-* **Clear a single sub-pool** (removes all entries under that `poolId` and clears cache for those entries)
+Entry keys should be unique across all sub-pools. The underlying kernel cache is keyed by `entryKey`, not by the combination of `poolId` and `entryKey`.
 
-  ```csharp
-  await kernelPool.Clear("sub-pool-1");
-  ```
-
-* **Clear all sub-pools** (removes every `poolId`, all entries, and clears the entire cache)
-
-  ```csharp
-  await kernelPool.ClearAll();
-  ```
+`Remove` evicts the removed entry's cached kernel. `Clear(poolId)` removes that sub-pool and clears the shared kernel cache, including kernels cached for other sub-pools. `ClearAll` removes every sub-pool and clears the cache.

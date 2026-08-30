@@ -10,23 +10,19 @@ using System.Threading.Tasks;
 namespace Soenneker.SemanticKernel.Pool.Abstract;
 
 /// <summary>
-/// Defines a pool of SemanticKernel entries, organized by poolId.
-/// Allows registering, unregistering, clearing, and checking out a kernel instance.
+/// Defines a collection of Semantic Kernel entries organized into named sub-pools, with cached kernel construction and per-entry quotas.
 /// </summary>
 public interface ISemanticKernelPool
 {
     /// <summary>
-    /// Attempts to fetch an available SemanticKernel from the specified pool.
-    /// If <paramref name="type"/> is null, defaults to <see cref="KernelType.Chat"/>.
-    /// Will retry every 500ms until <paramref name="cancellationToken"/> is cancelled.
+    /// Gets the first entry, in insertion order, whose type matches and whose configured quota can be consumed.
+    /// If <paramref name="type"/> is null, <see cref="KernelType.Chat"/> is used. When no entry is available, retries every 500 ms.
     /// </summary>
     /// <param name="poolId">Identifier for the sub-pool.</param>
     /// <param name="type">Optional desired kernel type; use <see cref="KernelType.Chat"/> by default.</param>
     /// <param name="cancellationToken">Token to cancel the operation.</param>
     /// <returns>
-    /// A <see cref="ValueTask{TResult}"/> containing a tuple of:
-    /// - <see cref="Kernel"/> instance (or null if cancelled)
-    /// - Corresponding <see cref="IKernelPoolEntry"/> used to manage that kernel.
+    /// A tuple containing the cached <see cref="Kernel"/> and the entry whose quota was consumed.
     /// </returns>
     ValueTask<(Kernel? kernel, IKernelPoolEntry? entry)> GetAvailable(string poolId, KernelType? type = null,
         CancellationToken cancellationToken = default);
@@ -44,7 +40,7 @@ public interface ISemanticKernelPool
     ValueTask<Dictionary<string, (int Second, int Minute, int Day)>> GetRemainingQuotas(string poolId, CancellationToken cancellationToken = default);
 
     /// <summary>
-    /// Registers a new kernel entry under the specified poolId using <paramref name="options"/>.
+    /// Adds a new kernel entry to the specified sub-pool. Entry keys should be unique across all sub-pools because the shared kernel cache is keyed only by entry key.
     /// </summary>
     /// <param name="poolId">Identifier for the sub-pool.</param>
     /// <param name="entryKey">Unique key for this kernel entry.</param>
@@ -77,7 +73,7 @@ public interface ISemanticKernelPool
     ValueTask<bool> Remove(string poolId, string entryKey, CancellationToken cancellationToken = default);
 
     /// <summary>
-    /// Clears and removes all entries from the specified poolId, and also clears the internal cache.
+    /// Removes the specified sub-pool and clears the entire shared kernel cache, including kernels created for other sub-pools.
     /// </summary>
     /// <param name="poolId">Identifier for the sub-pool.</param>
     /// <param name="cancellationToken">Token to cancel the operation.</param>
