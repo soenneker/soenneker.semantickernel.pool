@@ -1,5 +1,5 @@
 using System;
-using System.Collections.Concurrent;
+using System.Collections.Generic;
 using System.Threading;
 using System.Threading.Tasks;
 using Soenneker.Asyncs.Locks;
@@ -12,10 +12,10 @@ namespace Soenneker.SemanticKernel.Pool;
 /// <inheritdoc cref="IKernelRateLimiter"/>
 public sealed class KernelRateLimiter : IKernelRateLimiter
 {
-    private readonly ConcurrentQueue<DateTimeOffset> _secondWindow = new();
-    private readonly ConcurrentQueue<DateTimeOffset> _minuteWindow = new();
-    private readonly ConcurrentQueue<DateTimeOffset> _dayWindow = new();
-    private readonly ConcurrentQueue<(DateTimeOffset Timestamp, int Tokens)> _tokenDayWindow = new();
+    private readonly Queue<DateTimeOffset> _secondWindow = new();
+    private readonly Queue<DateTimeOffset> _minuteWindow = new();
+    private readonly Queue<DateTimeOffset> _dayWindow = new();
+    private readonly Queue<(DateTimeOffset Timestamp, int Tokens)> _tokenDayWindow = new();
 
     private readonly int? _requestsPerSecond;
     private readonly int? _requestsPerMinute;
@@ -23,6 +23,7 @@ public sealed class KernelRateLimiter : IKernelRateLimiter
     private readonly int? _tokensPerDay;
 
     private readonly AsyncLock _lock = new();
+    private int _tokenSum;
 
     public KernelRateLimiter(SemanticKernelOptions options)
     {
@@ -70,12 +71,18 @@ public sealed class KernelRateLimiter : IKernelRateLimiter
 
             var ts = new DateTimeOffset(now.Ticks, TimeSpan.Zero); // reuse trimmed
 
-            _secondWindow.Enqueue(ts);
-            _minuteWindow.Enqueue(ts);
-            _dayWindow.Enqueue(ts);
+            if (_requestsPerSecond is not null)
+                _secondWindow.Enqueue(ts);
+            if (_requestsPerMinute is not null)
+                _minuteWindow.Enqueue(ts);
+            if (_requestsPerDay is not null)
+                _dayWindow.Enqueue(ts);
 
             if (_tokensPerDay is not null)
+            {
                 _tokenDayWindow.Enqueue((ts, tokens));
+                _tokenSum += tokens;
+            }
 
             return true;
         }
@@ -117,27 +124,20 @@ public sealed class KernelRateLimiter : IKernelRateLimiter
         }
     }
 
-    private static void CleanupWindow(ConcurrentQueue<DateTimeOffset> window, long cutoffTicks)
+    private static void CleanupWindow(Queue<DateTimeOffset> window, long cutoffTicks)
     {
         while (window.TryPeek(out DateTimeOffset ts) && ts.Ticks < cutoffTicks)
             window.TryDequeue(out _);
     }
 
-    private static void CleanupTokenWindow(ConcurrentQueue<(DateTimeOffset Timestamp, int Tokens)> window, long cutoffTicks)
+    private void CleanupTokenWindow(Queue<(DateTimeOffset Timestamp, int Tokens)> window, long cutoffTicks)
     {
         while (window.TryPeek(out (DateTimeOffset Timestamp, int Tokens) item) && item.Timestamp.Ticks < cutoffTicks)
-            window.TryDequeue(out _);
-    }
-
-    private int GetTokenSum()
-    {
-        var total = 0;
-
-        foreach ((_, int tokens) in _tokenDayWindow)
         {
-            total += tokens;
+            window.Dequeue();
+            _tokenSum -= item.Tokens;
         }
-
-        return total;
     }
+
+    private int GetTokenSum() => _tokenSum;
 }
