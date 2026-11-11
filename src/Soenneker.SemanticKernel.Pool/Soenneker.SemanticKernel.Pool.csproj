@@ -46,7 +46,7 @@
     </ItemGroup>
 
     <ItemGroup>
-        <PackageReference Include="Soenneker.SemanticKernel.Cache" Version="11.0.905" />
+        <PackageReference Include="Soenneker.SemanticKernel.Cache" Version="11.0.906" />
         <PackageReference Include="Soenneker.Utils.Delay" Version="11.0.110" />
     </ItemGroup>
 </Project>
